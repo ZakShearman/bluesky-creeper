@@ -88,13 +88,12 @@ type PostEvent struct {
 }
 
 type Post struct {
-	Type      string    `json:"$type"`           // The type of the post, e.g., "app.bsky.feed.post".
-	CreatedAt time.Time `json:"createdAt"`       // Timestamp of the post creation.
-	Text      string    `json:"text"`            // The content of the post.
-	Languages []string  `json:"langs,omitempty"` // Languages of the post.
-	//Embed     *Embed    `json:"embed,omitempty"`  // Embedding data (if present).
-	//Facets    []Facet   `json:"facets,omitempty"` // Rich text features like mentions and links.
-	//Reply     *Reply    `json:"reply,omitempty"`  // Reply context (if the post is a reply).
+	CreatedAt time.Time `json:"createdAt"`        // Timestamp of the post creation.
+	Text      string    `json:"text"`             // The content of the post.
+	Languages []string  `json:"langs,omitempty"`  // Languages of the post.
+	Embed     *Embed    `json:"embed,omitempty"`  // Embedding data (if present).
+	Facets    []Facet   `json:"facets,omitempty"` // Rich text features like mentions and links.
+	Reply     *Reply    `json:"reply,omitempty"`  // Reply context (if the post is a reply).
 }
 
 // Embed represents an embedded record or media within a post.

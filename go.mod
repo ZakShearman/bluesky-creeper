@@ -1,4 +1,4 @@
-module bluesky-creeper
+module github.com/zakshearman/bluesky-creeper
 
 go 1.23.3
 
