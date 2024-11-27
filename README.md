@@ -1,5 +1,5 @@
 ## Modules
-- ingester: Ingests data by listening to jetstream websockets, stores them in a DB and fires a message
+- ingestor: Ingests data by listening to jetstream websockets, stores them in a DB and fires a message
 - 
 
 External Services:

@@ -1,1 +1,1 @@
-- raw-posts: Published by the ingester, the raw posts.
+- raw-posts: Published by the ingestor, the raw posts.

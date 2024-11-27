@@ -1,6 +1,6 @@
 # Define the directories for protobuf files and generated code
 PROTO_DIR := pkg/proto
-GENERATED_DIR := pkg/protobuf/generated
+GENERATED_DIR := pkg/proto/generated
 
 ifeq ($(OS),Windows_NT)
 	MKDIR = mkdir $(subst /,\,$(GENERATED_DIR))
@@ -19,9 +19,6 @@ endif
 PROTOC := protoc
 PROTOC_GEN_GO := protoc-gen-go
 PROTOC_GEN_GO_GRPC := protoc-gen-go-grpc
-
-# The Go import path for generated code
-GO_IMPORT_PATH := your_project_path
 
 # Define the URL for downloading protoc (adjust version as needed)
 PROTOC_VERSION := 28.3# Replace with the desired version

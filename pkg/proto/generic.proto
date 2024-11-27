@@ -5,10 +5,10 @@ option go_package = "github.com/zakshearman/bluesky-creeper/pkg/proto/generated"
 
 import "google/protobuf/timestamp.proto";
 
-message PostEvent {
+message PostCreatedEvent {
   string did = 1;
-  google.protobuf.Timestamp event_time_us = 2;
-  google.protobuf.Timestamp post_time_us = 3;
+  google.protobuf.Timestamp event_time_US = 2;
+  google.protobuf.Timestamp post_time_US = 3;
   string text = 4;
   repeated string languages = 5;
 
@@ -21,20 +21,20 @@ message PostEvent {
 
 message Facet {
   repeated Feature features = 1;
+
+  // Character count offsets from the start of the post (byte offsets in UTF-8 encoding), see https://docs.bsky.app/docs/advanced-guides/post-richtext
+  int32 byte_start = 2; // technically a byte but there is no byte type
+  int32 byte_end = 3; // technically a byte but there is no byte type
 }
 
 message Feature {
   FeatureType type = 1;
 
-  oneof feature {
-    LinkFeature link = 2;
-    TagFeature tag = 3;
-    MentionFeature mention = 4;
-  }
+  optional string link_uri = 20;
 
-  // Character count offsets from the start of the post (byte offsets in UTF-8 encoding), see https://docs.bsky.app/docs/advanced-guides/post-richtext
-  bytes bytes_start = 5;
-  bytes bytes_end = 6;
+  optional string tag_value = 30;
+
+  optional string mention_target_did = 40;
 }
 
 enum FeatureType {

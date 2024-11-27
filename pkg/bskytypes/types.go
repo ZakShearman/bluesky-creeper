@@ -1,90 +1,32 @@
-package main
+package bskytypes
 
 import (
-	"context"
-	"encoding/json"
-	"errors"
-	jetstreamclient "github.com/bluesky-social/jetstream/pkg/client"
-	"github.com/bluesky-social/jetstream/pkg/client/schedulers/parallel"
-	"github.com/bluesky-social/jetstream/pkg/models"
-	"log"
-	"log/slog"
+	"github.com/zakshearman/bluesky-creeper/pkg/proto/generated"
+	"google.golang.org/protobuf/types/known/timestamppb"
+	"strings"
 	"time"
 )
-
-func main() {
-	scheduler := parallel.NewScheduler(6000, "jetstream-prod", slog.Default(), func(ctx context.Context, event *models.Event) error {
-		if event.Commit == nil || event.Commit.Record == nil {
-			return nil
-		}
-
-		record := event.Commit.Record
-		var post Post
-		if err := json.Unmarshal(record, &post); err != nil {
-			log.Fatalf("Failed to unmarshal record: %v", err)
-		}
-
-		containsEn := false
-		for _, lang := range post.Languages {
-			if lang == "en" {
-				containsEn = true
-				break
-			}
-		}
-
-		if !containsEn {
-			return nil
-		}
-
-		parsedEvent := PostEvent{
-			Did:    event.Did,
-			TimeUS: time.UnixMicro(event.TimeUS),
-			Post:   post,
-		}
-
-		//jsonOutput, err := json.Marshal(event.Commit.Record)
-		//if err != nil {
-		//	log.Fatalf("Failed to marshal event: %v", err)
-		//}
-		//
-		//log.Printf("Received event: %s", jsonOutput)
-
-		log.Printf("Received post: %+v", parsedEvent)
-		return nil
-	})
-
-	conf := jetstreamclient.DefaultClientConfig()
-	conf.WantedCollections = []string{"app.bsky.feed.post"}
-	conf.WebsocketURL = "wss://jetstream.atproto.tools/subscribe"
-	conf.Compress = true
-
-	jetstreamClient, err := jetstreamclient.NewClient(conf, slog.Default(), scheduler)
-	if err != nil {
-		log.Fatalf("Failed to create client: %v", err)
-	}
-
-	go func() {
-		//cursor := time.Now().Add(-time.Hour * 8).UnixMicro()
-
-		ctx := context.Background()
-		go func() {
-			err = jetstreamClient.ConnectAndRead(ctx, nil)
-			if !errors.Is(err, context.Canceled) {
-				log.Fatalf("HandleRepoStream returned unexpectedly, killing the consumer: %+v...", err)
-			} else {
-				log.Printf("HandleRepoStream closed on context cancel...")
-			}
-		}()
-	}()
-
-	select {}
-}
 
 type PostEvent struct {
 	// Did is a Decentralized Identifier. This is an ID for the entity that created the post. PLC DIDs can be resolved here: https://web.plc.directory/resolve
 	Did    string
 	TimeUS time.Time
 	Post   Post
+}
+
+func (p *PostEvent) ToPostCreatedEvent() (*generated.PostCreatedEvent, error) {
+	facets := make([]*generated.Facet, len(p.Post.Facets))
+	for i, f := range p.Post.Facets {
+		facets[i] = f.ToProto()
+	}
+	return &generated.PostCreatedEvent{
+		Did:          p.Did,
+		EventTime_US: timestamppb.New(p.TimeUS),
+		PostTime_US:  timestamppb.New(p.Post.CreatedAt),
+		Text:         p.Post.Text,
+		Languages:    p.Post.Languages,
+		Facets:       facets,
+	}, nil
 }
 
 type Post struct {
@@ -151,6 +93,19 @@ type Facet struct {
 	Index    ByteIndex `json:"index"`    // Byte range of the feature within the text.
 }
 
+func (f *Facet) ToProto() *generated.Facet {
+	features := make([]*generated.Feature, len(f.Features))
+	for i, f := range f.Features {
+		features[i] = f.ToProto()
+	}
+
+	return &generated.Facet{
+		Features:  features,
+		ByteStart: f.Index.ByteStart,
+		ByteEnd:   f.Index.ByteEnd,
+	}
+}
+
 // Feature represents a specific rich text feature like a mention or hashtag.
 type Feature struct {
 	Type string `json:"$type"` // Type of the feature (e.g., "app.bsky.richtext.facet#mention").
@@ -159,10 +114,32 @@ type Feature struct {
 	URI  string `json:"uri"`   // URI for linked content (if applicable).
 }
 
+func (f *Feature) ToProto() *generated.Feature {
+	feature := &generated.Feature{}
+	var fType generated.FeatureType
+	switch strings.Split(f.Type, "#")[1] {
+	case "link":
+		fType = generated.FeatureType_LINK
+		feature.LinkUri = &f.URI
+	case "mention":
+		fType = generated.FeatureType_MENTION
+		feature.MentionTargetDid = &f.DID
+	case "tag":
+		fType = generated.FeatureType_TAG
+		feature.TagValue = &f.Tag
+	default:
+		fType = generated.FeatureType_UNKNOWN
+	}
+
+	return &generated.Feature{
+		Type: fType,
+	}
+}
+
 // ByteIndex specifies the byte range of a feature in the post's text.
 type ByteIndex struct {
-	ByteStart int `json:"byteStart"` // Start byte position.
-	ByteEnd   int `json:"byteEnd"`   // End byte position.
+	ByteStart int32 `json:"byteStart"` // Start byte position.
+	ByteEnd   int32 `json:"byteEnd"`   // End byte position.
 }
 
 // Reply represents a reply context for a post.
