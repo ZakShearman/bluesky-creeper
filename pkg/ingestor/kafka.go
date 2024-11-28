@@ -2,11 +2,12 @@ package ingestor
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"github.com/segmentio/kafka-go"
 	"github.com/zakshearman/bluesky-creeper/pkg/bskytypes"
 	"go.uber.org/zap"
-	"google.golang.org/protobuf/proto"
+	"log"
 	"time"
 )
 
@@ -32,21 +33,17 @@ func NewKafkaNotifier(cfg KafkaConfig, log *zap.SugaredLogger) *KafkaNotifier {
 }
 
 func (k *KafkaNotifier) NotifyPostCreated(ctx context.Context, p bskytypes.PostEvent) error {
-	msg, err := p.ToPostCreatedEvent()
+	bytes, err := json.Marshal(p)
 	if err != nil {
 		return err
 	}
 
-	bytes, err := proto.Marshal(msg)
-	if err != nil {
-		return err
-	}
+	log.Printf("Sending post: %+v", string(bytes))
 
 	return k.w.WriteMessages(ctx,
 		kafka.Message{
-			Key:     []byte(p.Did),
-			Headers: []kafka.Header{{Key: "X-Proto-Type", Value: []byte(msg.ProtoReflect().Descriptor().FullName())}},
-			Value:   bytes,
+			Key:   []byte(p.Did),
+			Value: bytes,
 		},
 	)
 }

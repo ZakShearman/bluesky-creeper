@@ -1,0 +1,19 @@
+@startuml
+:Ingestor;
+split
+  :Insert Kafka
+  (raw-posts);
+split again
+  :Insert Elastic;
+  end
+end split;
+
+:Enrich A
+(Insert 'A');
+:Enrich B
+(Insert 'B');
+:Enrich C
+(Insert 'C');
+:Update Elastic;
+
+@enduml

@@ -58,3 +58,9 @@ func newIngestorClient(notifier *ingestor.KafkaNotifier, lc fx.Lifecycle) *inges
 	})
 	return client
 }
+
+//func newElasticClient() {
+//	es, err := elasticsearch.NewTypedClient(elasticsearch.Config{})
+//	es.Index().Do()
+//	es.
+//}

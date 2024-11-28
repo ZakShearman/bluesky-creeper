@@ -69,5 +69,12 @@ install_tools:
 	go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
 	go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
 
+### Docker commands
+
+compose_up:
+	docker-compose up -d
+
+setup_topics:
+	docker exec -it bluesky_redpanda rpk topic create raw-posts
 
 .PHONY: all generate clean install_tools
