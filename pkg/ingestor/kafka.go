@@ -3,12 +3,12 @@ package ingestor
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"github.com/segmentio/kafka-go"
 	"github.com/zakshearman/bluesky-creeper/pkg/bskytypes"
+	"github.com/zakshearman/bluesky-creeper/pkg/config"
+	kafkaUtils "github.com/zakshearman/bluesky-creeper/pkg/utils/kafka"
 	"go.uber.org/zap"
 	"log"
-	"time"
 )
 
 const topic = "raw-posts"
@@ -17,18 +17,9 @@ type KafkaNotifier struct {
 	w *kafka.Writer
 }
 
-func NewKafkaNotifier(cfg KafkaConfig, log *zap.SugaredLogger) *KafkaNotifier {
-	w := &kafka.Writer{
-		Addr:         kafka.TCP(fmt.Sprintf("%s:%d", cfg.Address, cfg.Port)),
-		Topic:        topic,
-		Balancer:     &kafka.LeastBytes{},
-		Async:        true,
-		BatchTimeout: time.Millisecond * 500,
-		ErrorLogger:  kafka.LoggerFunc(log.Errorw),
-	}
-
+func NewKafkaNotifier(cfg config.KafkaConfig, log *zap.SugaredLogger) *KafkaNotifier {
 	return &KafkaNotifier{
-		w: w,
+		w: kafkaUtils.CreateWriter(cfg, log, topic),
 	}
 }
 

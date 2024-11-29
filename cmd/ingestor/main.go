@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/zakshearman/bluesky-creeper/pkg/config"
 	"github.com/zakshearman/bluesky-creeper/pkg/ingestor"
 	"go.uber.org/fx"
 	"go.uber.org/fx/fxevent"
@@ -10,7 +11,7 @@ import (
 func main() {
 	fx.New(
 		// Config
-		fx.Provide(ingestor.LoadIngestorConfig),
+		fx.Supply(config.LoadCommonConfig(config.ComponentKafka)),
 
 		// Logging
 		fx.Provide(
@@ -27,11 +28,10 @@ func main() {
 		// Ingestor listener
 		fx.Invoke(newIngestorClient),
 	).Run()
-
 }
 
-func newZapLogger(conf ingestor.IngestorConfig) (*zap.Logger, error) {
-	if conf.Env == ingestor.EnvValueProd {
+func newZapLogger(conf config.CommonConfig) (*zap.Logger, error) {
+	if conf.Env == config.EnvValueProd {
 		return zap.NewProduction()
 	}
 	return zap.NewDevelopment()
@@ -42,7 +42,7 @@ func newZapSugared(log *zap.Logger) *zap.SugaredLogger {
 	return log.Sugar()
 }
 
-func newKafkaNotifier(cfg ingestor.IngestorConfig, log *zap.SugaredLogger, lc fx.Lifecycle) *ingestor.KafkaNotifier {
+func newKafkaNotifier(cfg config.CommonConfig, log *zap.SugaredLogger, lc fx.Lifecycle) *ingestor.KafkaNotifier {
 	notifier := ingestor.NewKafkaNotifier(cfg.Kafka, log)
 	lc.Append(fx.Hook{
 		OnStop: notifier.Shutdown,

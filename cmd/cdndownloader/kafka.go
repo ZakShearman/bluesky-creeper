@@ -1,0 +1,3 @@
+package cdndownloader
+
+type 

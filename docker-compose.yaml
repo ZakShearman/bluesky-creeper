@@ -1,4 +1,59 @@
+# Settings and configurations that are common for all containers
+x-minio-common: &minio-common
+  image: quay.io/minio/minio:RELEASE.2024-11-07T00-52-20Z
+  command: server --console-address ":9001" http://minio{1...2}/data{1...2}
+  expose:
+    - "9000"
+    - "9001"
+  environment:
+    MINIO_ROOT_USER: admin
+    MINIO_ROOT_PASSWORD: password
+    MINIO_ACCESS_KEY: minio
+    MINIO_SECRET_KEY: minio123
+  healthcheck:
+    test: [ "CMD", "mc", "ready", "local" ]
+    interval: 5s
+    timeout: 5s
+    retries: 5
+
 services:
+  minio1:
+    <<: *minio-common
+    hostname: minio1
+    volumes:
+      - minio_data_1_1:/data1
+      - minio_data_1_2:/data2
+  minio2:
+    <<: *minio-common
+    hostname: minio2
+    volumes:
+      - minio_data_2_1:/data1
+      - minio_data_2_2:/data2
+
+  minio-nginx:
+    image: nginx:1.27.3-alpine
+    hostname: nginx
+    volumes:
+      - ./docker-files/minio_nginx.conf:/etc/nginx/nginx.conf:ro
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    depends_on:
+      - minio1
+      - minio2
+
+  minio-createbuckets:
+    image: minio/mc
+    depends_on:
+      - minio-nginx
+    entrypoint: >
+      /bin/sh -c "
+      /usr/bin/mc alias set mioinstance http://minio-nginx:9000 admin password;
+      /usr/bin/mc mb mioinstance/cdn-data;
+      /usr/bin/mc policy set public mioinstance/cdn-data;
+      exit 0;
+      "
+
   mongodb:
     image: mongo:8.0
     container_name: bluesky_mongodb
@@ -28,7 +83,7 @@ services:
     networks:
       - bluesky-network
 
-### Monitoring services
+  ### Monitoring services
 
   prometheus:
     image: prom/prometheus
@@ -52,189 +107,208 @@ services:
     environment:
       - GF_SECURITY_ADMIN_USER=admin
       - GF_SECURITY_ADMIN_PASSWORD=grafana
-#      - GF_INSTALL_PLUGINS=hamedkarbasi93-kafka-datasource
+    #      - GF_INSTALL_PLUGINS=hamedkarbasi93-kafka-datasource
     volumes:
       - ./docker-files/grafana:/etc/grafana/provisioning/datasources
 
-### Elastic and Kibana
-  elastic-setup:
-    image: docker.elastic.co/elasticsearch/elasticsearch:${STACK_VERSION}
-    volumes:
-      - es_certs:/usr/share/elasticsearch/config/certs
-    user: "0"
-    command: >
-      bash -c '
-        if [ x${ELASTIC_PASSWORD} == x ]; then
-          echo "Set the ELASTIC_PASSWORD environment variable in the .env file";
-          exit 1;
-        elif [ x${KIBANA_PASSWORD} == x ]; then
-          echo "Set the KIBANA_PASSWORD environment variable in the .env file";
-          exit 1;
-        fi;
-        if [ ! -f config/certs/ca.zip ]; then
-          echo "Creating CA";
-          bin/elasticsearch-certutil ca --silent --pem -out config/certs/ca.zip;
-          unzip config/certs/ca.zip -d config/certs;
-        fi;
-        if [ ! -f config/certs/certs.zip ]; then
-          echo "Creating certs";
-          echo -ne \
-          "instances:\n"\
-          "  - name: es01\n"\
-          "    dns:\n"\
-          "      - es01\n"\
-          "      - localhost\n"\
-          "    ip:\n"\
-          "      - 127.0.0.1\n"\
-          "  - name: kibana\n"\
-          "    dns:\n"\
-          "      - kibana\n"\
-          "      - localhost\n"\
-          "    ip:\n"\
-          "      - 127.0.0.1\n"\
-          "  - name: fleet-server\n"\
-          "    dns:\n"\
-          "      - fleet-server\n"\
-          "      - localhost\n"\
-          "    ip:\n"\
-          "      - 127.0.0.1\n"\
-          > config/certs/instances.yml;
-          bin/elasticsearch-certutil cert --silent --pem -out config/certs/certs.zip --in config/certs/instances.yml --ca-cert config/certs/ca/ca.crt --ca-key config/certs/ca/ca.key;
-          unzip config/certs/certs.zip -d config/certs;
-        fi;
-        echo "Setting file permissions"
-        chown -R root:root config/certs;
-        find . -type d -exec chmod 750 \{\} \;;
-        find . -type f -exec chmod 640 \{\} \;;
-        echo "Waiting for Elasticsearch availability";
-        until curl -s --cacert config/certs/ca/ca.crt https://es01:9200 | grep -q "missing authentication credentials"; do sleep 30; done;
-        echo "Setting kibana_system password";
-        until curl -s -X POST --cacert config/certs/ca/ca.crt -u "elastic:${ELASTIC_PASSWORD}" -H "Content-Type: application/json" https://es01:9200/_security/user/kibana_system/_password -d "{\"password\":\"${KIBANA_PASSWORD}\"}" | grep -q "^{}"; do sleep 10; done;
-        echo "All done!";
-        exit 0;
-      '
-    healthcheck:
-      test: [ "CMD-SHELL", "[ -f config/certs/es01/es01.crt ]" ]
-      interval: 1s
-      timeout: 5s
-      retries: 120
-    networks:
-      - bluesky-network
+  #  ### Elastic and Kibana
+  #  elastic-setup:
+  #    image: docker.elastic.co/elasticsearch/elasticsearch:${STACK_VERSION}
+  #    volumes:
+  #      - es_certs:/usr/share/elasticsearch/config/certs
+  #    user: "0"
+  #    command: >
+  #      bash -c '
+  #        if [ x${ELASTIC_PASSWORD} == x ]; then
+  #          echo "Set the ELASTIC_PASSWORD environment variable in the .env file";
+  #          exit 1;
+  #        elif [ x${KIBANA_PASSWORD} == x ]; then
+  #          echo "Set the KIBANA_PASSWORD environment variable in the .env file";
+  #          exit 1;
+  #        fi;
+  #        if [ ! -f config/certs/ca.zip ]; then
+  #          echo "Creating CA";
+  #          bin/elasticsearch-certutil ca --silent --pem -out config/certs/ca.zip;
+  #          unzip config/certs/ca.zip -d config/certs;
+  #        fi;
+  #        if [ ! -f config/certs/certs.zip ]; then
+  #          echo "Creating certs";
+  #          echo -ne \
+  #          "instances:\n"\
+  #          "  - name: es01\n"\
+  #          "    dns:\n"\
+  #          "      - es01\n"\
+  #          "      - localhost\n"\
+  #          "    ip:\n"\
+  #          "      - 127.0.0.1\n"\
+  #          "  - name: kibana\n"\
+  #          "    dns:\n"\
+  #          "      - kibana\n"\
+  #          "      - localhost\n"\
+  #          "    ip:\n"\
+  #          "      - 127.0.0.1\n"\
+  #          "  - name: fleet-server\n"\
+  #          "    dns:\n"\
+  #          "      - fleet-server\n"\
+  #          "      - localhost\n"\
+  #          "    ip:\n"\
+  #          "      - 127.0.0.1\n"\
+  #          > config/certs/instances.yml;
+  #          bin/elasticsearch-certutil cert --silent --pem -out config/certs/certs.zip --in config/certs/instances.yml --ca-cert config/certs/ca/ca.crt --ca-key config/certs/ca/ca.key;
+  #          unzip config/certs/certs.zip -d config/certs;
+  #        fi;
+  #        echo "Setting file permissions"
+  #        chown -R root:root config/certs;
+  #        find . -type d -exec chmod 750 \{\} \;;
+  #        find . -type f -exec chmod 640 \{\} \;;
+  #        echo "Waiting for Elasticsearch availability";
+  #        until curl -s --cacert config/certs/ca/ca.crt https://es01:9200 | grep -q "missing authentication credentials"; do sleep 30; done;
+  #        echo "Setting kibana_system password";
+  #        until curl -s -X POST --cacert config/certs/ca/ca.crt -u "elastic:${ELASTIC_PASSWORD}" -H "Content-Type: application/json" https://es01:9200/_security/user/kibana_system/_password -d "{\"password\":\"${KIBANA_PASSWORD}\"}" | grep -q "^{}"; do sleep 10; done;
+  #        echo "All done!";
+  #        exit 0;
+  #      '
+  #    healthcheck:
+  #      test: [ "CMD-SHELL", "[ -f config/certs/es01/es01.crt ]" ]
+  #      interval: 1s
+  #      timeout: 5s
+  #      retries: 120
+  #    networks:
+  #      - bluesky-network
+  #
+  #  es01:
+  #    depends_on:
+  #      elastic-setup:
+  #        condition: service_healthy
+  #    image: docker.elastic.co/elasticsearch/elasticsearch:${STACK_VERSION}
+  #    volumes:
+  #      - es_certs:/usr/share/elasticsearch/config/certs
+  #      - es_data01:/usr/share/elasticsearch/data
+  #    ports:
+  #      - ${ES_PORT}:9200
+  #    environment:
+  #      - node.name=es01
+  #      - cluster.name=${CLUSTER_NAME}
+  #      - cluster.initial_master_nodes=es01 #,es02,es03
+  #      #      - discovery.seed_hosts=es02,es03
+  #      - ELASTIC_PASSWORD=${ELASTIC_PASSWORD}
+  #      - bootstrap.memory_lock=true
+  #      - xpack.security.enabled=true
+  #      - xpack.security.http.ssl.enabled=true
+  #      - xpack.security.http.ssl.key=certs/es01/es01.key
+  #      - xpack.security.http.ssl.certificate=certs/es01/es01.crt
+  #      - xpack.security.http.ssl.certificate_authorities=certs/ca/ca.crt
+  #      - xpack.security.transport.ssl.enabled=true
+  #      - xpack.security.transport.ssl.key=certs/es01/es01.key
+  #      - xpack.security.transport.ssl.certificate=certs/es01/es01.crt
+  #      - xpack.security.transport.ssl.certificate_authorities=certs/ca/ca.crt
+  #      - xpack.security.transport.ssl.verification_mode=certificate
+  #      - xpack.license.self_generated.type=${LICENSE}
+  #      - xpack.ml.use_auto_machine_memory_percent=true
+  #    mem_limit: 8G
+  #    ulimits:
+  #      memlock:
+  #        soft: -1
+  #        hard: -1
+  #    healthcheck:
+  #      test:
+  #        [
+  #          "CMD-SHELL",
+  #          "curl -s --cacert config/certs/ca/ca.crt https://localhost:9200 | grep -q 'missing authentication credentials'",
+  #        ]
+  #      interval: 10s
+  #      timeout: 10s
+  #      retries: 120
+  #    networks:
+  #      - bluesky-network
+  #
+  #  kibana:
+  #    depends_on:
+  #      es01:
+  #        condition: service_healthy
+  #    image: docker.elastic.co/kibana/kibana:${STACK_VERSION}
+  #    volumes:
+  #      - es_certs:/usr/share/kibana/config/certs
+  #      - es_kibana_data:/usr/share/kibana/data
+  #    ports:
+  #      - ${KIBANA_PORT}:5601
+  #    environment:
+  #      - SERVERNAME=kibana
+  #      - ELASTICSEARCH_HOSTS=https://es01:9200
+  #      - ELASTICSEARCH_USERNAME=kibana_system
+  #      - ELASTICSEARCH_PASSWORD=${KIBANA_PASSWORD}
+  #      - ELASTICSEARCH_SSL_CERTIFICATEAUTHORITIES=config/certs/ca/ca.crt
+  #    mem_limit: 4G
+  #    healthcheck:
+  #      test:
+  #        [
+  #          "CMD-SHELL",
+  #          "curl -s -I http://localhost:5601 | grep -q 'HTTP/1.1 302 Found'",
+  #        ]
+  #      interval: 10s
+  #      timeout: 10s
+  #      retries: 120
+  #    networks:
+  #      - bluesky-network
+  #
+  #  fleet-server:
+  #    depends_on:
+  #      kibana:
+  #        condition: service_healthy
+  #      es01:
+  #        condition: service_healthy
+  #    image: docker.elastic.co/beats/elastic-agent:${STACK_VERSION}
+  #    volumes:
+  #      - es_certs:/certs
+  #      - es_fleet_data:/usr/share/elastic-agent
+  #      - "/var/lib/docker/containers:/var/lib/docker/containers:ro"
+  #      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+  #      - "/sys/fs/cgroup:/hostfs/sys/fs/cgroup:ro"
+  #      - "/proc:/hostfs/proc:ro"
+  #      - "/:/hostfs:ro"
+  #    ports:
+  #      - ${FLEET_PORT}:8220
+  #      - ${APMSERVER_PORT}:8200
+  #    user: root
+  #    environment:
+  #      - SSL_CERTIFICATE_AUTHORITIES=/certs/ca/ca.crt
+  #      - CERTIFICATE_AUTHORITIES=/certs/ca/ca.crt
+  #      - FLEET_CA=/certs/ca/ca.crt
+  #      - FLEET_ENROLL=1
+  #      - FLEET_INSECURE=false
+  #      - FLEET_SERVER_ELASTICSEARCH_CA=/certs/ca/ca.crt
+  #      - FLEET_SERVER_ELASTICSEARCH_HOST=https://es01:9200
+  #      - FLEET_SERVER_ELASTICSEARCH_INSECURE=false
+  #      - FLEET_SERVER_ENABLE=1
+  #      - FLEET_SERVER_CERT=/certs/fleet-server/fleet-server.crt
+  #      - FLEET_SERVER_CERT_KEY=/certs/fleet-server/fleet-server.key
+  #      - FLEET_SERVER_INSECURE_HTTP=false
+  #      - FLEET_SERVER_POLICY_ID=fleet-server-policy
+  #      - FLEET_URL=https://fleet-server:8220
+  #      - KIBANA_FLEET_CA=/certs/ca/ca.crt
+  #      - KIBANA_FLEET_SETUP=1
+  #      - KIBANA_FLEET_USERNAME=elastic
+  #      - KIBANA_FLEET_PASSWORD=${ELASTIC_PASSWORD}
+  #      - KIBANA_HOST=https://kibana:5601
+  #    networks:
+  #      - bluesky-network
 
-  es01:
-    depends_on:
-      elastic-setup:
-        condition: service_healthy
-    image: docker.elastic.co/elasticsearch/elasticsearch:${STACK_VERSION}
-    volumes:
-      - es_certs:/usr/share/elasticsearch/config/certs
-      - es_data01:/usr/share/elasticsearch/data
+  jetstream:
+    image: ghcr.io/bluesky-social/jetstream:${JETSTREAM_VERSION}
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: always
+    container_name: jetstream
     ports:
-      - ${ES_PORT}:9200
-    environment:
-      - node.name=es01
-      - cluster.name=${CLUSTER_NAME}
-      - cluster.initial_master_nodes=es01 #,es02,es03
-#      - discovery.seed_hosts=es02,es03
-      - ELASTIC_PASSWORD=${ELASTIC_PASSWORD}
-      - bootstrap.memory_lock=true
-      - xpack.security.enabled=true
-      - xpack.security.http.ssl.enabled=true
-      - xpack.security.http.ssl.key=certs/es01/es01.key
-      - xpack.security.http.ssl.certificate=certs/es01/es01.crt
-      - xpack.security.http.ssl.certificate_authorities=certs/ca/ca.crt
-      - xpack.security.transport.ssl.enabled=true
-      - xpack.security.transport.ssl.key=certs/es01/es01.key
-      - xpack.security.transport.ssl.certificate=certs/es01/es01.crt
-      - xpack.security.transport.ssl.certificate_authorities=certs/ca/ca.crt
-      - xpack.security.transport.ssl.verification_mode=certificate
-      - xpack.license.self_generated.type=${LICENSE}
-      - xpack.ml.use_auto_machine_memory_percent=true
-    mem_limit: 8G
-    ulimits:
-      memlock:
-        soft: -1
-        hard: -1
-    healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "curl -s --cacert config/certs/ca/ca.crt https://localhost:9200 | grep -q 'missing authentication credentials'",
-        ]
-      interval: 10s
-      timeout: 10s
-      retries: 120
-    networks:
-      - bluesky-network
-
-  kibana:
-    depends_on:
-      es01:
-        condition: service_healthy
-    image: docker.elastic.co/kibana/kibana:${STACK_VERSION}
+      - "6008:6008"
+      - "6009:6009"
     volumes:
-      - es_certs:/usr/share/kibana/config/certs
-      - es_kibana_data:/usr/share/kibana/data
-    ports:
-      - ${KIBANA_PORT}:5601
+      - bluesky_jetstream:/data
     environment:
-      - SERVERNAME=kibana
-      - ELASTICSEARCH_HOSTS=https://es01:9200
-      - ELASTICSEARCH_USERNAME=kibana_system
-      - ELASTICSEARCH_PASSWORD=${KIBANA_PASSWORD}
-      - ELASTICSEARCH_SSL_CERTIFICATEAUTHORITIES=config/certs/ca/ca.crt
-    mem_limit: 4G
-    healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "curl -s -I http://localhost:5601 | grep -q 'HTTP/1.1 302 Found'",
-        ]
-      interval: 10s
-      timeout: 10s
-      retries: 120
-    networks:
-      - bluesky-network
-
-  fleet-server:
-    depends_on:
-      kibana:
-        condition: service_healthy
-      es01:
-        condition: service_healthy
-    image: docker.elastic.co/beats/elastic-agent:${STACK_VERSION}
-    volumes:
-      - es_certs:/certs
-      - es_fleet_data:/usr/share/elastic-agent
-      - "/var/lib/docker/containers:/var/lib/docker/containers:ro"
-      - "/var/run/docker.sock:/var/run/docker.sock:ro"
-      - "/sys/fs/cgroup:/hostfs/sys/fs/cgroup:ro"
-      - "/proc:/hostfs/proc:ro"
-      - "/:/hostfs:ro"
-    ports:
-      - ${FLEET_PORT}:8220
-      - ${APMSERVER_PORT}:8200
-    user: root
-    environment:
-      - SSL_CERTIFICATE_AUTHORITIES=/certs/ca/ca.crt
-      - CERTIFICATE_AUTHORITIES=/certs/ca/ca.crt
-      - FLEET_CA=/certs/ca/ca.crt
-      - FLEET_ENROLL=1
-      - FLEET_INSECURE=false
-      - FLEET_SERVER_ELASTICSEARCH_CA=/certs/ca/ca.crt
-      - FLEET_SERVER_ELASTICSEARCH_HOST=https://es01:9200
-      - FLEET_SERVER_ELASTICSEARCH_INSECURE=false
-      - FLEET_SERVER_ENABLE=1
-      - FLEET_SERVER_CERT=/certs/fleet-server/fleet-server.crt
-      - FLEET_SERVER_CERT_KEY=/certs/fleet-server/fleet-server.key
-      - FLEET_SERVER_INSECURE_HTTP=false
-      - FLEET_SERVER_POLICY_ID=fleet-server-policy
-      - FLEET_URL=https://fleet-server:8220
-      - KIBANA_FLEET_CA=/certs/ca/ca.crt
-      - KIBANA_FLEET_SETUP=1
-      - KIBANA_FLEET_USERNAME=elastic
-      - KIBANA_FLEET_PASSWORD=${ELASTIC_PASSWORD}
-      - KIBANA_HOST=https://kibana:5601
+      - JETSTREAM_DATA_DIR=/data
+      # livness check interval to restart when no events are received (default: 15sec)
+      - JETSTREAM_LIVENESS_TTL=15s
     networks:
       - bluesky-network
 
@@ -243,6 +317,10 @@ networks:
     driver: bridge
 
 volumes:
+  minio_data_1_1:
+  minio_data_1_2:
+  minio_data_2_1:
+  minio_data_2_2:
   bluesky_mongodb_data:
   bluesky_redpanda_data:
   prom_data:
@@ -250,3 +328,4 @@ volumes:
   es_data01:
   es_kibana_data:
   es_fleet_data:
+  bluesky_jetstream:
